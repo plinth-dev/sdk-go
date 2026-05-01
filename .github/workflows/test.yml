@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Discover every Go module in the monorepo and test it. Each module is
+  # independent; their go.mods are not assumed to be compatible.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.find.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: find
+        run: |
+          set -euo pipefail
+          # Emit a JSON array of module directories, e.g. ["./errors", "./audit"].
+          modules=$(find . -name go.mod -not -path './.git/*' \
+            -exec dirname {} \; | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "modules=$modules" >> "$GITHUB_OUTPUT"
+          echo "Found modules: $modules"
+
+  test:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.discover.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          # Each module manages its own go.sum.
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Vet ${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+      - name: Test ${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
+        run: go test -race -cover ./...

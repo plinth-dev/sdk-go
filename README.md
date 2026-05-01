@@ -1,56 +1,67 @@
 # Plinth — Go SDK
 
-> **Status: not yet released — Phase B in progress.**
-> The repo and the seven package directories are reserved; **no `go get` import path resolves yet**. API surfaces are being designed and reviewed; the first tag will be `v0.1.0` per package. Track design ADRs at [plinth.run/sdk](https://plinth.run/sdk/) and progress on the [roadmap](https://github.com/plinth-dev/.github/blob/main/ROADMAP.md).
+A multi-module Go monorepo. One independent module per package, semver-tagged from `v0.1.0` per module, installable via `go get`.
 
-A multi-module Go monorepo. One independent module per package, semver-tagged from `v0.1.0` once each design is locked, installable via `go get`.
+Design rationale per package: <https://plinth.run/sdk/>.
 
-## Planned packages
+## Packages
 
-| Package | Responsibility | Import path |
+| Package | Status | Responsibility |
 | --- | --- | --- |
-| `audit` | Emit CloudEvents-shaped audit events to a pluggable transport | `github.com/plinth-dev/sdk-go/audit` |
-| `authz` | Cerbos PDP client wrapper with explicit `Decision` and fail-closed semantics | `github.com/plinth-dev/sdk-go/authz` |
-| `errors` | Typed error vocabulary; sentinel errors via `errors.Is`; RFC 7807 mapping | `github.com/plinth-dev/sdk-go/errors` |
-| `health` | Dependency probe registry with parallel execution | `github.com/plinth-dev/sdk-go/health` |
-| `otel` | OpenTelemetry SDK initialisation with standard resource attributes | `github.com/plinth-dev/sdk-go/otel` |
-| `paginate` | Cursor + offset pagination types and parsers | `github.com/plinth-dev/sdk-go/paginate` |
-| `vault` | Secret reader: `/run/secrets/<name>` first, env var fallback, in-memory cache | `github.com/plinth-dev/sdk-go/vault` |
+| [`errors`](./errors) | **shipped** · pre-release | Typed error vocabulary; sentinels via `errors.Is`; RFC 7807 problem+json middleware. |
+| `audit` | not yet shipped | Emit CloudEvents-shaped audit events to a pluggable transport (NATS by default), non-blocking. |
+| `authz` | not yet shipped | Cerbos PDP client wrapper with explicit `Decision` and fail-closed semantics. |
+| `health` | not yet shipped | Dependency probe registry with parallel execution. |
+| `otel` | not yet shipped | OpenTelemetry SDK initialisation with standard resource attributes. |
+| `paginate` | not yet shipped | Cursor + offset pagination types and parsers; allow-list-based sort safety. |
+| `vault` | not yet shipped | Secret reader: `/run/secrets/<name>` first, env-var fallback, in-memory cache. |
 
-Once shipped, each package will have its own `go.mod`, README, semver tag, and minimal dependency surface.
+Each shipped package has its own `go.mod`, semver tag, README, and minimal dependency surface.
 
-## Install (once shipped)
+## Install
 
 ```bash
-go get github.com/plinth-dev/sdk-go/authz@latest
+# Per package — semver-tagged independently.
+go get github.com/plinth-dev/sdk-go/errors@latest
 ```
 
-## Design intent
+## Local development
 
-The API surface for each package is being documented at [plinth.run/sdk](https://plinth.run/sdk/) ahead of implementation. This repo will hold the implementations.
+Top-level [`go.work`](./go.work) joins all modules into one Go workspace, so cross-module refactors don't need `replace` directives.
 
-## Planned layout
+```bash
+go work sync                       # ensure workspace is current
+go test -race -cover ./...         # run from any module directory
+go vet ./...                       # check from any module directory
+```
+
+CI runs `go vet` + `go test -race -cover` per module on every push.
+
+## Layout
 
 ```
 .
-├── audit/         # go.mod, audit.go, audit_test.go, README.md
-├── authz/
-├── errors/
-├── health/
-├── otel/
-├── paginate/
-└── vault/
+├── go.work                        # Go workspace joining every module
+├── errors/                        # github.com/plinth-dev/sdk-go/errors
+│   ├── go.mod
+│   ├── doc.go errors.go http.go
+│   ├── errors_test.go http_test.go
+│   ├── README.md  LICENSE
+│   └── ...
+├── audit/                         # (not yet shipped)
+├── authz/                         # (not yet shipped)
+└── ...
 ```
 
 ## Versioning
 
-Each package is tagged independently as `<package>/vX.Y.Z`. Breaking changes within `0.x` are batched into minor versions; v1.0 freezes APIs for a year.
+Each package is tagged independently as `<package>/vX.Y.Z`. Breaking changes within `0.x` are batched into minor versions; `v1.0` freezes APIs for a year.
 
 ## Related
 
 - [`sdk-ts`](https://github.com/plinth-dev/sdk-ts) — the TypeScript SDK.
 - [`starter-api`](https://github.com/plinth-dev/starter-api) — Go module starter that imports these packages.
-- [`plinth.run`](https://plinth.run) — design ADRs and tutorials.
+- [`plinth.run`](https://plinth.run) — per-package design docs and tutorials.
 
 ## License
 
