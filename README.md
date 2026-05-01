@@ -12,8 +12,8 @@ Design rationale per package: <https://plinth.run/sdk/>.
 | [`audit`](./audit) | **shipped** · pre-release | Non-blocking publisher with CloudEvents-shaped events and a pluggable transport. |
 | [`paginate`](./paginate) | **shipped** · pre-release | Cursor + offset pagination types and parsers; allow-list-based sort safety. |
 | [`vault`](./vault) | **shipped** · pre-release | Secret reader: `/run/secrets/<name>` first, env-var fallback, in-memory cache. |
+| [`health`](./health) | **shipped** · pre-release | Parallel dependency-probe registry with separate liveness / readiness handlers. |
 | `authz` | not yet shipped | Cerbos PDP client wrapper with explicit `Decision` and fail-closed semantics. |
-| `health` | not yet shipped | Dependency probe registry with parallel execution. |
 | `otel` | not yet shipped | OpenTelemetry SDK initialisation with standard resource attributes. |
 
 Each shipped package has its own `go.mod`, semver tag, README, and minimal dependency surface.

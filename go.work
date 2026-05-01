@@ -3,6 +3,7 @@ go 1.23
 use (
 	./audit
 	./errors
+	./health
 	./paginate
 	./vault
 )
