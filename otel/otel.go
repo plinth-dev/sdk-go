@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -81,8 +82,12 @@ type Options struct {
 
 	// TracesSamplerArg is the parent-based ratio sampler arg in [0, 1].
 	// Defaults: 1.0 in dev, 0.5 in staging, 0.05 in production.
-	// Override via EnvOTELSamplerArg.
-	TracesSamplerArg float64
+	// Set OTEL_TRACES_SAMPLER_ARG in the env to override this (and any
+	// explicit value passed in code — env wins, matching the OpenTelemetry
+	// spec). Pointer so zero is distinguishable from unset; pass nil
+	// (or leave zero-value) to use env-or-default, &0 for explicit
+	// no-sampling.
+	TracesSamplerArg *float64
 
 	// BatchTimeout caps how long the BatchSpanProcessor buffers before flushing.
 	// Defaults to the SDK's default (5 seconds).
@@ -130,9 +135,7 @@ func Init(ctx context.Context, opts Options) (shutdown func(context.Context) err
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	if opts.TracesSamplerArg == 0 {
-		opts.TracesSamplerArg = defaultSampleRate(opts.Environment)
-	}
+	samplerArg := resolveSamplerArg(opts.TracesSamplerArg, opts.Environment)
 
 	res, err := buildResource(opts)
 	if err != nil {
@@ -161,7 +164,7 @@ func Init(ctx context.Context, opts Options) (shutdown func(context.Context) err
 		sdktrace.WithSpanProcessor(processor),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sdktrace.ParentBased(
-			sdktrace.TraceIDRatioBased(opts.TracesSamplerArg),
+			sdktrace.TraceIDRatioBased(samplerArg),
 		)),
 	)
 
@@ -184,6 +187,36 @@ func defaultSampleRate(env string) float64 {
 	default:
 		return 1.0
 	}
+}
+
+// resolveSamplerArg returns the effective sampler ratio. Precedence:
+// OTEL_TRACES_SAMPLER_ARG env var (matches OpenTelemetry spec) → explicit
+// Options.TracesSamplerArg → defaultSampleRate for the environment.
+//
+// Returning a value clamped to [0, 1] — TraceIDRatioBased treats values
+// outside that range identically to 1.0 / 0.0 respectively, but explicit
+// clamping makes the intent clear and avoids subtle surprises if the SDK
+// changes that behavior.
+func resolveSamplerArg(explicit *float64, environment string) float64 {
+	if raw := os.Getenv(EnvOTELSamplerArg); raw != "" {
+		if f, err := strconv.ParseFloat(raw, 64); err == nil {
+			return clampSampleRate(f)
+		}
+	}
+	if explicit != nil {
+		return clampSampleRate(*explicit)
+	}
+	return defaultSampleRate(environment)
+}
+
+func clampSampleRate(f float64) float64 {
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
 }
 
 // buildResource composes the Plinth standard resource attributes with the

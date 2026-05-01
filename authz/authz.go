@@ -125,9 +125,36 @@ type Options struct {
 // stub the backend without spinning up a real PDP. Unexported so external
 // callers can't bypass the constructor.
 type cerbosBackend interface {
-	IsAllowed(ctx context.Context, p *cerbos.Principal, r *cerbos.Resource, action string) (bool, error)
-	CheckResources(ctx context.Context, p *cerbos.Principal, batch *cerbos.ResourceBatch) (*cerbos.CheckResourcesResponse, error)
+	IsAllowed(ctx context.Context, p *cerbos.Principal, r *cerbos.Resource, action string, opts ...cerbos.RequestOpt) (bool, error)
+	CheckResources(ctx context.Context, p *cerbos.Principal, batch *cerbos.ResourceBatch, opts ...cerbos.RequestOpt) (*cerbos.CheckResourcesResponse, error)
 	ServerInfo(ctx context.Context) (*cerbos.ServerInfo, error)
+}
+
+// grpcAdapter wraps *cerbos.GRPCClient so it satisfies cerbosBackend's
+// extended signature. The underlying SDK exposes RequestOpts via a
+// chained `.With(...)` call rather than per-method varargs; this adapter
+// flattens that into the interface so tests can stub the backend
+// without dealing with the chaining.
+type grpcAdapter struct{ inner *cerbos.GRPCClient }
+
+func (a grpcAdapter) IsAllowed(ctx context.Context, p *cerbos.Principal, r *cerbos.Resource, action string, opts ...cerbos.RequestOpt) (bool, error) {
+	c := a.inner
+	if len(opts) > 0 {
+		c = c.With(opts...)
+	}
+	return c.IsAllowed(ctx, p, r, action)
+}
+
+func (a grpcAdapter) CheckResources(ctx context.Context, p *cerbos.Principal, batch *cerbos.ResourceBatch, opts ...cerbos.RequestOpt) (*cerbos.CheckResourcesResponse, error) {
+	c := a.inner
+	if len(opts) > 0 {
+		c = c.With(opts...)
+	}
+	return c.CheckResources(ctx, p, batch)
+}
+
+func (a grpcAdapter) ServerInfo(ctx context.Context) (*cerbos.ServerInfo, error) {
+	return a.inner.ServerInfo(ctx)
 }
 
 // Client is the only surface modules use. Safe for concurrent use by
@@ -175,7 +202,7 @@ func New(ctx context.Context, opts Options) (*Client, error) {
 	}
 
 	return &Client{
-		backend:    client,
+		backend:    grpcAdapter{inner: client},
 		bypassMode: bypassMode,
 		envName:    opts.EnvName,
 		logger:     opts.Logger,
@@ -204,7 +231,7 @@ func (c *Client) CheckAction(ctx context.Context, p Principal, r Resource, actio
 	cp := toCerbosPrincipal(p)
 	cr := toCerbosResource(r)
 
-	allowed, err := c.backend.IsAllowed(ctx, cp, cr, action)
+	allowed, err := c.backend.IsAllowed(ctx, cp, cr, action, requestOptsFor(p)...)
 	if err != nil {
 		c.logger.Warn("authz: PDP unreachable",
 			slog.String("action", action),
@@ -241,7 +268,7 @@ func (c *Client) CheckActions(ctx context.Context, p Principal, r Resource, acti
 	cr := toCerbosResource(r)
 	batch := cerbos.NewResourceBatch().Add(cr, actions...)
 
-	resp, err := c.backend.CheckResources(ctx, cp, batch)
+	resp, err := c.backend.CheckResources(ctx, cp, batch, requestOptsFor(p)...)
 	if err != nil {
 		c.logger.Warn("authz: PDP unreachable on batched check",
 			slog.Int("actions", len(actions)),
@@ -300,19 +327,28 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // toCerbosPrincipal builds a Cerbos SDK Principal from our Principal type.
 // Concurrency-safe — reads from the input but mutates only the output.
+//
+// AuxData (JWT) is delivered separately via [requestOptsFor] — Cerbos's
+// SDK accepts aux data via a per-request `client.With(opts...)` chain
+// rather than as a Principal field.
 func toCerbosPrincipal(p Principal) *cerbos.Principal {
 	cp := cerbos.NewPrincipal(p.ID, p.Roles...)
 	if len(p.Attributes) > 0 {
 		// Cerbos's WithAttributes mutates the receiver and returns it.
 		cp = cp.WithAttributes(p.Attributes)
 	}
-	// AuxData.JWT is delivered to Cerbos via per-request RequestOpts in
-	// the higher-level client (PrincipalCtx); for direct IsAllowed/CheckResources
-	// calls, we'd need to use Client.With(cerbos.AuxDataJWT(...)). That
-	// integration lands in a follow-on once a Cerbos policy uses $jwtClaims;
-	// for v0.1.0 the JWT field is reserved on Principal but not yet wired.
-	_ = p.AuxData
 	return cp
+}
+
+// requestOptsFor builds the per-call cerbos.RequestOpt slice that the
+// adapter passes through `*cerbos.GRPCClient.With(...)`. Today only the
+// JWT is wired; future aux fields (e.g. extra structured claims) land
+// here without changing the call sites.
+func requestOptsFor(p Principal) []cerbos.RequestOpt {
+	if p.AuxData == nil || p.AuxData.JWT == "" {
+		return nil
+	}
+	return []cerbos.RequestOpt{cerbos.AuxDataJWT(p.AuxData.JWT, "")}
 }
 
 // toCerbosResource builds a Cerbos SDK Resource from our Resource type.

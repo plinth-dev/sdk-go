@@ -28,7 +28,8 @@ func initTest(t *testing.T, opts Options) (func(context.Context) error, *tracete
 	// Pin sampler to AlwaysOn for tests; the production default for
 	// Environment="production" is 0.05, which probabilistically drops
 	// single-span tests.
-	opts.TracesSamplerArg = 1.0
+	one := 1.0
+	opts.TracesSamplerArg = &one
 	opts.Exporter = rec
 	shutdown, err := Init(context.Background(), opts)
 	if err != nil {
@@ -277,3 +278,49 @@ func TestWithOperationName(t *testing.T) {
 	}
 }
 
+
+// resolveSamplerArg precedence: env > explicit > default-by-environment.
+
+func TestResolveSamplerArg_EnvOverridesExplicit(t *testing.T) {
+	t.Setenv(EnvOTELSamplerArg, "0.25")
+	half := 0.5
+	got := resolveSamplerArg(&half, "production")
+	if got != 0.25 {
+		t.Errorf("resolveSamplerArg = %v; env should win, want 0.25", got)
+	}
+}
+
+func TestResolveSamplerArg_ExplicitZero(t *testing.T) {
+	zero := 0.0
+	got := resolveSamplerArg(&zero, "dev")
+	if got != 0 {
+		t.Errorf("resolveSamplerArg = %v; explicit 0 must be respected, want 0", got)
+	}
+}
+
+func TestResolveSamplerArg_NilFallsBackToEnvironmentDefault(t *testing.T) {
+	got := resolveSamplerArg(nil, "production")
+	if got != 0.05 {
+		t.Errorf("resolveSamplerArg = %v; nil + production should be 0.05", got)
+	}
+}
+
+func TestResolveSamplerArg_GarbageEnvIgnored(t *testing.T) {
+	t.Setenv(EnvOTELSamplerArg, "not-a-float")
+	half := 0.5
+	got := resolveSamplerArg(&half, "production")
+	if got != 0.5 {
+		t.Errorf("resolveSamplerArg = %v; garbage env should fall through, want 0.5", got)
+	}
+}
+
+func TestResolveSamplerArg_ClampsOutOfRange(t *testing.T) {
+	hi := 99.0
+	if got := resolveSamplerArg(&hi, "dev"); got != 1.0 {
+		t.Errorf("clamp high: got %v, want 1", got)
+	}
+	lo := -1.0
+	if got := resolveSamplerArg(&lo, "dev"); got != 0.0 {
+		t.Errorf("clamp low: got %v, want 0", got)
+	}
+}

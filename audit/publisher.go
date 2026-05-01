@@ -72,10 +72,17 @@ type Publisher struct {
 	publishTimeout time.Duration
 	drainTimeout   time.Duration
 
+	// closeMu guards the queue's lifecycle. Publish holds an RLock for
+	// the duration of the channel send, so Close cannot close the
+	// channel while a Publish is mid-send. Close takes the write lock
+	// once, flips closed, then closes the queue.
+	closeMu   sync.RWMutex
+	closed    bool
 	queue     chan Event
 	drainDone chan struct{}
-	mu        sync.Mutex // serializes drop-oldest swap
-	closed    atomic.Bool
+
+	// dropMu serializes the drop-oldest swap when the buffer is full.
+	dropMu sync.Mutex
 
 	published atomic.Uint64
 	dropped   atomic.Uint64
@@ -139,7 +146,12 @@ func noTraceID(context.Context) string { return "" }
 // caller can't tell which side of Close they're on, and we'd rather log
 // noise than block.
 func (p *Publisher) Publish(ctx context.Context, e Event) {
-	if p.closed.Load() {
+	// Hold the read lock for the entire send. Close holds the write
+	// lock when it closes the channel, so we can never send on a
+	// closed channel.
+	p.closeMu.RLock()
+	defer p.closeMu.RUnlock()
+	if p.closed {
 		p.dropped.Add(1)
 		return
 	}
@@ -160,8 +172,8 @@ func (p *Publisher) Publish(ctx context.Context, e Event) {
 	}
 
 	// Slow path: drop-oldest under lock.
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.dropMu.Lock()
+	defer p.dropMu.Unlock()
 
 	// Re-check after lock — drain may have made room.
 	select {
@@ -218,11 +230,14 @@ func (p *Publisher) drain() {
 //
 // Subsequent calls return nil — Close is idempotent.
 func (p *Publisher) Close(ctx context.Context) error {
-	if !p.closed.CompareAndSwap(false, true) {
+	p.closeMu.Lock()
+	if p.closed {
+		p.closeMu.Unlock()
 		return nil
 	}
-
+	p.closed = true
 	close(p.queue)
+	p.closeMu.Unlock()
 
 	// Wait for drain, bounded by both ctx and DrainTimeout.
 	drainCtx, cancel := context.WithTimeout(ctx, p.drainTimeout)

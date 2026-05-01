@@ -64,7 +64,7 @@ func main() {
 
 ## Compatibility
 
-- **Go 1.23+**.
+- **Go 1.25+** (matches sdk-go/otel; the cerbos-sdk-go transitive deps require it).
 - Wraps `github.com/cerbos/cerbos-sdk-go` (v0.3.18+).
 - The `cerbosBackend` interface is intentionally unexported. Tests in the same package use a fake; external callers can't bypass `New`'s safety checks.
 

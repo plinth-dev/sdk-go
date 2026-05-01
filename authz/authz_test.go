@@ -35,21 +35,24 @@ type fakeBackend struct {
 	lastPrincipal *cerbos.Principal
 	lastResource  *cerbos.Resource
 	lastAction    string
+	lastReqOpts   []cerbos.RequestOpt
 }
 
-func (f *fakeBackend) IsAllowed(ctx context.Context, p *cerbos.Principal, r *cerbos.Resource, action string) (bool, error) {
+func (f *fakeBackend) IsAllowed(ctx context.Context, p *cerbos.Principal, r *cerbos.Resource, action string, opts ...cerbos.RequestOpt) (bool, error) {
 	f.isAllowedCalls.Add(1)
 	f.lastPrincipal = p
 	f.lastResource = r
 	f.lastAction = action
+	f.lastReqOpts = opts
 	if f.err != nil {
 		return false, f.err
 	}
 	return f.allowedActions[action], nil
 }
 
-func (f *fakeBackend) CheckResources(ctx context.Context, p *cerbos.Principal, batch *cerbos.ResourceBatch) (*cerbos.CheckResourcesResponse, error) {
+func (f *fakeBackend) CheckResources(ctx context.Context, p *cerbos.Principal, batch *cerbos.ResourceBatch, opts ...cerbos.RequestOpt) (*cerbos.CheckResourcesResponse, error) {
 	f.checkResCalls.Add(1)
+	f.lastReqOpts = opts
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -386,6 +389,43 @@ func TestToCerbosResource_BasicFields(t *testing.T) {
 	}
 	if cr.ID() != "i1" {
 		t.Errorf("ID = %q; want i1", cr.ID())
+	}
+}
+
+// ── AuxData / JWT wiring ────────────────────────────────────────────
+
+func TestCheckAction_PassesJWTViaAuxData(t *testing.T) {
+	fake := &fakeBackend{allowedActions: map[string]bool{"read": true}}
+	c, _ := newTestClient(t, fake, false)
+
+	d := c.CheckAction(context.Background(),
+		Principal{
+			ID:      "alice",
+			Roles:   []string{"editor"},
+			AuxData: &AuxData{JWT: "header.payload.sig"},
+		},
+		Resource{Kind: "Item", ID: "i1"},
+		"read",
+	)
+	if !d.Allowed {
+		t.Fatalf("Allowed = false; want true")
+	}
+	if len(fake.lastReqOpts) == 0 {
+		t.Fatalf("backend received no request opts; expected AuxDataJWT to be passed")
+	}
+}
+
+func TestCheckAction_OmitsRequestOptsWhenNoJWT(t *testing.T) {
+	fake := &fakeBackend{allowedActions: map[string]bool{"read": true}}
+	c, _ := newTestClient(t, fake, false)
+
+	c.CheckAction(context.Background(),
+		Principal{ID: "alice", Roles: []string{"editor"}}, // no AuxData
+		Resource{Kind: "Item", ID: "i1"},
+		"read",
+	)
+	if len(fake.lastReqOpts) != 0 {
+		t.Errorf("backend got %d request opts; expected zero when AuxData is nil", len(fake.lastReqOpts))
 	}
 }
 

@@ -106,12 +106,19 @@ func (p Pagination) OffsetSQL() string {
 // CursorBefore decodes [Pagination.Cursor] into a (column, value) pair the
 // repository layer can use to filter. Returns zero values + nil error if
 // Cursor is empty. Returns an [ErrMalformedCursor]-wrapped error if the
-// cursor doesn't decode.
+// cursor doesn't decode, or [ErrUnknownSortColumn] if the cursor's column
+// isn't in allowedSortColumns.
+//
+// allowedSortColumns is mandatory: cursors are caller-supplied strings.
+// Without an allow-list check here, a malicious caller could craft a
+// cursor for a column the repository never intended to expose, bypassing
+// the [FromQuery] sort_by allow-list. Pass the same list you pass to
+// [FromQuery].
 //
 // The cursor format is opaque base64 of "<column>:<value>". Don't depend on
 // the format directly; pass cursors through unchanged from one request to
 // the next via [PageMeta.NextCursor].
-func (p Pagination) CursorBefore() (column, value string, err error) {
+func (p Pagination) CursorBefore(allowedSortColumns []string) (column, value string, err error) {
 	if p.Cursor == "" {
 		return "", "", nil
 	}
@@ -125,6 +132,9 @@ func (p Pagination) CursorBefore() (column, value string, err error) {
 	}
 	if parts[0] == "" {
 		return "", "", fmt.Errorf("%w: empty column", ErrMalformedCursor)
+	}
+	if !slices.Contains(allowedSortColumns, parts[0]) {
+		return "", "", fmt.Errorf("%w: %q (allowed: %v)", ErrUnknownSortColumn, parts[0], allowedSortColumns)
 	}
 	return parts[0], parts[1], nil
 }

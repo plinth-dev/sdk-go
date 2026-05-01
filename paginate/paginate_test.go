@@ -1,9 +1,9 @@
 package paginate
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -73,10 +73,12 @@ func TestOffsetSQL_CursorModeReturnsEmpty(t *testing.T) {
 
 // ── Cursor encode/decode ─────────────────────────────────────────────
 
+var allowedTestCols = []string{"created_at", "name", "id"}
+
 func TestEncodeCursor_RoundTrip(t *testing.T) {
 	cursor := EncodeCursor("created_at", "2026-04-30T12:34:56Z")
 	p := Pagination{Cursor: cursor}
-	col, val, err := p.CursorBefore()
+	col, val, err := p.CursorBefore(allowedTestCols)
 	if err != nil {
 		t.Fatalf("CursorBefore: %v", err)
 	}
@@ -89,28 +91,38 @@ func TestEncodeCursor_RoundTrip(t *testing.T) {
 }
 
 func TestCursorBefore_EmptyCursor(t *testing.T) {
-	col, val, err := Pagination{}.CursorBefore()
+	col, val, err := Pagination{}.CursorBefore(allowedTestCols)
 	if err != nil || col != "" || val != "" {
 		t.Errorf("empty cursor: col=%q val=%q err=%v; want all zero", col, val, err)
 	}
 }
 
 func TestCursorBefore_MalformedBase64(t *testing.T) {
-	_, _, err := Pagination{Cursor: "!!not-base64!!"}.CursorBefore()
+	_, _, err := Pagination{Cursor: "!!not-base64!!"}.CursorBefore(allowedTestCols)
 	if !errors.Is(err, ErrMalformedCursor) {
 		t.Errorf("err = %v; want ErrMalformedCursor", err)
 	}
 }
 
 func TestCursorBefore_MissingSeparator(t *testing.T) {
-	// Encode a string without ":" — a malformed cursor that decodes as base64
-	// but isn't column:value.
-	bad := EncodeCursor("noseparator", "")
-	// Strip colon so the encoded raw doesn't have one.
-	bad = strings.ReplaceAll(bad, "OmZhbHNl", "AAAA") // ad-hoc corruption
-	_, _, err := Pagination{Cursor: bad}.CursorBefore()
-	if err != nil && !errors.Is(err, ErrMalformedCursor) {
-		t.Errorf("err = %v; want ErrMalformedCursor when not nil", err)
+	// Base64-encode a payload without ":" — separator missing, even
+	// before the allow-list check.
+	bad := base64.URLEncoding.EncodeToString([]byte("noseparator"))
+	_, _, err := Pagination{Cursor: bad}.CursorBefore(allowedTestCols)
+	if !errors.Is(err, ErrMalformedCursor) {
+		t.Errorf("err = %v; want ErrMalformedCursor", err)
+	}
+}
+
+// TestCursorBefore_InjectionRejected proves the allow-list guards against
+// a hand-crafted cursor referencing a column the repo never intended to
+// expose. Without this check, a caller could craft a cursor for
+// "secret_column" and bypass the FromQuery sort_by allow-list.
+func TestCursorBefore_InjectionRejected(t *testing.T) {
+	malicious := EncodeCursor("password_hash", "x")
+	_, _, err := Pagination{Cursor: malicious}.CursorBefore(allowedTestCols)
+	if !errors.Is(err, ErrUnknownSortColumn) {
+		t.Errorf("err = %v; want ErrUnknownSortColumn for non-allow-listed column", err)
 	}
 }
 

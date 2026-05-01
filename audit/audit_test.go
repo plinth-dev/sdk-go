@@ -409,3 +409,42 @@ func TestEndToEnd_RealisticUsage(t *testing.T) {
 		t.Errorf("last Reason should be preserved; got %q", last.Data.Reason)
 	}
 }
+
+// TestPublisher_PublishCloseRace asserts there is no panic when Publish
+// and Close run concurrently. Without the closeMu RWMutex guarding the
+// channel send, a Publish that has passed the closed check can race
+// Close's close(p.queue) and panic with "send on closed channel".
+//
+// This test must be run with -race for the assertion to be meaningful.
+func TestPublisher_PublishCloseRace(t *testing.T) {
+	for trial := 0; trial < 50; trial++ {
+		mp := NewMemoryProducer()
+		pub := New(Options{Producer: mp, BufferSize: 4})
+
+		var wg sync.WaitGroup
+		// 10 publishers racing one Close.
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					pub.Publish(context.Background(), Event{
+						Actor:    Actor{ID: "u", Type: "user"},
+						Action:   "test.action",
+						Resource: Resource{Kind: "Test", ID: "x"},
+						Outcome:  OutcomeSuccess,
+						Severity: SeverityInfo,
+					})
+				}
+			}()
+		}
+
+		// Race Close against the publishers.
+		go func() {
+			_ = pub.Close(context.Background())
+		}()
+
+		wg.Wait()
+		// If we got here without panic, the close-channel race is closed.
+	}
+}

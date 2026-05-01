@@ -97,7 +97,7 @@ func TestSomething(t *testing.T) {
 
 ## Compatibility
 
-- **Go 1.23+**.
+- **Go 1.25+** (transitive OpenTelemetry deps require it).
 - Wraps `go.opentelemetry.io/otel` (v1.43+) and `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` (v0.68+).
 - Uses semconv v1.40.0 (matches the SDK's default detector schema URL).
 
