@@ -1,10 +1,11 @@
 # Plinth — Go SDK
 
-A multi-module Go monorepo. One independent module per package, semver-tagged from `v0.1.0`, installable via `go get`.
+> **Status: not yet released — Phase B in progress.**
+> The repo and the seven package directories are reserved; **no `go get` import path resolves yet**. API surfaces are being designed and reviewed; the first tag will be `v0.1.0` per package. Track design ADRs at [plinth.run/sdk](https://plinth.run/sdk/) and progress on the [roadmap](https://github.com/plinth-dev/.github/blob/main/ROADMAP.md).
 
-> **Status: v0.1.0 — Phase B in progress.** API surfaces are being designed; expect breaking changes until each package is tagged at `v0.1.0`.
+A multi-module Go monorepo. One independent module per package, semver-tagged from `v0.1.0` once each design is locked, installable via `go get`.
 
-## Packages
+## Planned packages
 
 | Package | Responsibility | Import path |
 | --- | --- | --- |
@@ -16,9 +17,9 @@ A multi-module Go monorepo. One independent module per package, semver-tagged fr
 | `paginate` | Cursor + offset pagination types and parsers | `github.com/plinth-dev/sdk-go/paginate` |
 | `vault` | Secret reader: `/run/secrets/<name>` first, env var fallback, in-memory cache | `github.com/plinth-dev/sdk-go/vault` |
 
-Each package has its own `go.mod`, README, semver tag, and minimal dependency surface.
+Once shipped, each package will have its own `go.mod`, README, semver tag, and minimal dependency surface.
 
-## Install
+## Install (once shipped)
 
 ```bash
 go get github.com/plinth-dev/sdk-go/authz@latest
@@ -26,9 +27,9 @@ go get github.com/plinth-dev/sdk-go/authz@latest
 
 ## Design intent
 
-The API surface for each package is documented in detail at [plinth.run/sdk](https://plinth.run/sdk/). This repo holds the implementations.
+The API surface for each package is being documented at [plinth.run/sdk](https://plinth.run/sdk/) ahead of implementation. This repo will hold the implementations.
 
-## Layout
+## Planned layout
 
 ```
 .
