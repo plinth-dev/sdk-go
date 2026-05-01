@@ -13,8 +13,8 @@ Design rationale per package: <https://plinth.run/sdk/>.
 | [`paginate`](./paginate) | **shipped** · pre-release | Cursor + offset pagination types and parsers; allow-list-based sort safety. |
 | [`vault`](./vault) | **shipped** · pre-release | Secret reader: `/run/secrets/<name>` first, env-var fallback, in-memory cache. |
 | [`health`](./health) | **shipped** · pre-release | Parallel dependency-probe registry with separate liveness / readiness handlers. |
-| `authz` | not yet shipped | Cerbos PDP client wrapper with explicit `Decision` and fail-closed semantics. |
-| `otel` | not yet shipped | OpenTelemetry SDK initialisation with standard resource attributes. |
+| [`otel`](./otel) | **shipped** · pre-release | OpenTelemetry SDK init with standard resource attributes; OTLP/HTTP default. |
+| [`authz`](./authz) | **shipped** · pre-release | Fail-closed Cerbos PDP client; bypass mode rejected at startup in production. |
 
 Each shipped package has its own `go.mod`, semver tag, README, and minimal dependency surface.
 
